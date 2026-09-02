@@ -1,4 +1,4 @@
-# app-coreg-v2
+# coreg
 
 Automated MEG/EEG coregistration of sensor positions to MRI anatomy.
 
