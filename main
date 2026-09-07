@@ -19,5 +19,5 @@ fi
 
 singularity exec \
   -B `pwd`/license.txt:/opt/freesurfer/license.txt \
-  docker://aunnikri642/app-freesurfer-mne-source-recon \
+  docker://brainlifemeeg/mne-freesurfer:1.12.1-7.4.1 \
   python3 main.py
