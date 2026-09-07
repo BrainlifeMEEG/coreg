@@ -83,6 +83,7 @@ from brainlife_utils import (
     add_info_to_product,
     add_image_to_product,
     create_product_json,
+    setup_offscreen_3d_backend,
 )
 
 setup_matplotlib_backend()
@@ -94,7 +95,7 @@ from mne.io.constants import FIFF
 # == SETUP ==
 ensure_output_dirs('out_dir', 'out_figs', 'out_dir_report')
 report_items = []
-report = mne.Report(title='Coregistration Report')  # created early so _save_alignment_fig can add views
+report = mne.Report(title='Coregistration Report')  # created early so alignment steps below can add views
 
 # == LOAD CONFIG ==
 config = load_config()
@@ -240,66 +241,16 @@ if hsp_count == 0:
         "warning"
     )
 
-# == PREPARE 3D BACKEND (offscreen via QT_QPA_PLATFORM=offscreen + VTK offscreen) ==
-# Pre-create QApplication so MNE's _display_is_valid() check is bypassed.
+# == PREPARE 3D BACKEND (offscreen, via shared brainlife_utils helper) ==
 use_3d = False
 use_meg = modality in ('meg', 'meeg')
 use_eeg = modality in ('eeg', 'meeg')
 
 try:
-    # Pre-create QApplication so MNE's _display_is_valid() check is bypassed
-    from qtpy.QtWidgets import QApplication
-    _qapp = QApplication.instance() or QApplication(sys.argv)
-
-    import pyvista as pv
-    pv.OFF_SCREEN = True
-    mne.viz.set_3d_backend('pyvistaqt')
-
-    # Monkey-patch: always create pyvista.Plotter(off_screen=True) instead of
-    # BackgroundPlotter — plot_alignment() doesn't pass off_screen so the original
-    # patch misses it and BackgroundPlotter renders black without hardware GL.
-    from mne.viz.backends._pyvista import (
-        PyVistaFigure, Plotter as PVPlotter, _PyVistaRenderer, _ALL_PLOTTERS,
-    )
-    import mne.viz.backends.renderer as renderer_mod
-
-    def _patched_build(self):
-        if self._plotter is None:
-            store_filtered = {k: v for k, v in self.store.items()
-                              if k in ('window_size', 'shape', 'border', 'multi_samples')}
-            plotter = PVPlotter(off_screen=True, **store_filtered)
-            plotter.background_color = self.background_color
-            self._plotter = plotter
-            try:
-                _ALL_PLOTTERS[plotter._id_name] = plotter
-            except AttributeError:
-                pass
-        if self.plotter.iren is not None:
-            self.plotter.iren.initialize()
-            def safe_update(stime=1, force_redraw=True):
-                self.plotter.render()
-            self.plotter.update = safe_update
-        return self.plotter
-
-    PyVistaFigure._build = _patched_build
-
-    class _OffscreenRenderer(_PyVistaRenderer):
-        _kind = 'pyvistaqt'
-        def _window_initialize(self, **kwargs): pass
-        def _window_close_connect(self, func, *, after=True): pass
-        def _window_close_disconnect(self, func): pass
-        def _window_set_theme(self, theme): pass
-        def show(self):
-            # plot_alignment calls renderer.show() which normally calls plotter.show()
-            # with auto_close=True — this destroys the render window immediately,
-            # making all subsequent renders no-ops. Use auto_close=False instead.
-            self.figure.plotter.show(auto_close=False)
-
-    renderer_mod.backend._Renderer = _OffscreenRenderer
+    setup_offscreen_3d_backend()
     use_3d = True
 except Exception as e:
-    add_info_to_product(report_items,
-                        f"3D alignment plots unavailable: {e}", "warning")
+    add_info_to_product(report_items, f"3D alignment plots unavailable: {e}", "warning")
 
 # app-bem-v2 (watershed) always runs before coreg, so outer_skin + brain are guaranteed.
 # outer_skin = scalp at 40% opacity (see-through); brain = inner_skull solid inside.
@@ -318,77 +269,14 @@ plot_kwargs = dict(
 )
 
 
-def _save_alignment_fig(step_name, label, add_to_product=False):
-    """Save 4-view alignment screenshots to report. Product.json gets front view only.
-
-    show(auto_close=False) initializes the render window (_first_time=False) so
-    subsequent render() calls actually re-render with the new camera position.
-    """
-    if not use_3d:
-        return
-    _views = [
-        ("Front", [(0,  0.6, 0),  (0,0,0), (0,0,1)]),
-        ("Back",  [(0, -0.6, 0),  (0,0,0), (0,0,1)]),
-        ("Left",  [(-0.6, 0, 0),  (0,0,0), (0,0,1)]),
-        ("Right", [( 0.6, 0, 0),  (0,0,0), (0,0,1)]),
-    ]
-    try:
-        fig = mne.viz.plot_alignment(info, trans=coreg.trans, **plot_kwargs)
-        # show() sets _first_time=False so render() actually re-renders
-        fig.plotter.show(auto_close=False)
-        view_files = []
-        for view_label, cam in _views:
-            try:
-                fig.plotter.camera_position = cam
-                fig.plotter.render()
-                fpath = os.path.join("out_figs", f"{step_name}_{view_label.lower()}.png")
-                fig.plotter.screenshot(fpath)
-                view_files.append((view_label, fpath))
-            except Exception as e:
-                add_info_to_product(report_items,
-                                    f"Could not render {label} {view_label}: {e}", "warning")
-        try:
-            fig.plotter.close()
-        except Exception:
-            pass
-    except Exception as e:
-        add_info_to_product(report_items, f"Could not create alignment figure: {e}", "warning")
-        return
-
-    if not view_files:
-        return
-
-    # Tile all views into a 2x2 grid (for report + optionally product.json)
-    tiled_path = os.path.join("out_figs", f"{step_name}_tiled.png")
-    try:
-        import matplotlib.pyplot as plt
-        fig_mpl, axes = plt.subplots(2, 2, figsize=(12, 9))
-        fig_mpl.suptitle(label, fontsize=13, fontweight="bold")
-        for ax, (view_label, fpath) in zip(axes.flat, view_files):
-            ax.imshow(plt.imread(fpath))
-            ax.set_title(view_label, fontsize=10)
-            ax.axis("off")
-        # blank unused panels if fewer than 4 views succeeded
-        for ax in axes.flat[len(view_files):]:
-            ax.axis("off")
-        plt.tight_layout()
-        fig_mpl.savefig(tiled_path, dpi=120, bbox_inches="tight")
-        plt.close(fig_mpl)
-    except Exception as e:
-        add_info_to_product(report_items, f"Could not tile {label} views: {e}", "warning")
-        tiled_path = None
-
-    # Add tiled image + individual views to report
-    if tiled_path and os.path.isfile(tiled_path):
-        report.add_image(tiled_path, title=label)
-    for view_label, fpath in view_files:
-        report.add_image(fpath, title=f"{label} — {view_label}")
-
-    # product.json gets the tiled image (or front view fallback)
-    if add_to_product:
-        product_img = tiled_path if (tiled_path and os.path.isfile(tiled_path)) else view_files[0][1]
-        add_image_to_product(report_items, label, filepath=product_img)
-
+# Camera positions for the 4-view alignment screenshots saved at each
+# coregistration step below (front/back/left/right around the head).
+_alignment_views = [
+    ("Front", [(0,  0.6, 0),  (0,0,0), (0,0,1)]),
+    ("Back",  [(0, -0.6, 0),  (0,0,0), (0,0,1)]),
+    ("Left",  [(-0.6, 0, 0),  (0,0,0), (0,0,1)]),
+    ("Right", [( 0.6, 0, 0),  (0,0,0), (0,0,1)]),
+]
 
 # == COREGISTRATION ==
 # fiducials: 'auto' | 'estimated' | JSON dict string e.g. '{"nasion":[0,0.1,0],"lpa":[-0.07,0,0],"rpa":[0.07,0,0]}'
@@ -431,12 +319,115 @@ except Exception as e:
 
 try:
     # Step 1: initial state (saved to file only, not product.json)
-    _save_alignment_fig('coreg_01_initial', '1. Initial (before fit)')
+    step_name, step_label, step_add_to_product = 'coreg_01_initial', '1. Initial (before fit)', False
+    if use_3d:
+        view_files = []
+        try:
+            fig = mne.viz.plot_alignment(info, trans=coreg.trans, **plot_kwargs)
+            # show() sets _first_time=False so render() actually re-renders
+            fig.plotter.show(auto_close=False)
+            for view_label, cam in _alignment_views:
+                try:
+                    fig.plotter.camera_position = cam
+                    fig.plotter.render()
+                    fpath = os.path.join("out_figs", f"{step_name}_{view_label.lower()}.png")
+                    fig.plotter.screenshot(fpath)
+                    view_files.append((view_label, fpath))
+                except Exception as e:
+                    add_info_to_product(report_items,
+                                        f"Could not render {step_label} {view_label}: {e}", "warning")
+            try:
+                fig.plotter.close()
+            except Exception:
+                pass
+        except Exception as e:
+            add_info_to_product(report_items, f"Could not create alignment figure: {e}", "warning")
+            view_files = []
+        if view_files:
+            # Tile all views into a 2x2 grid (for report + optionally product.json)
+            tiled_path = os.path.join("out_figs", f"{step_name}_tiled.png")
+            try:
+                fig_mpl, axes = plt.subplots(2, 2, figsize=(12, 9))
+                fig_mpl.suptitle(step_label, fontsize=13, fontweight="bold")
+                for ax, (view_label, fpath) in zip(axes.flat, view_files):
+                    ax.imshow(plt.imread(fpath))
+                    ax.set_title(view_label, fontsize=10)
+                    ax.axis("off")
+                # blank unused panels if fewer than 4 views succeeded
+                for ax in axes.flat[len(view_files):]:
+                    ax.axis("off")
+                plt.tight_layout()
+                fig_mpl.savefig(tiled_path, dpi=120, bbox_inches="tight")
+                plt.close(fig_mpl)
+            except Exception as e:
+                add_info_to_product(report_items, f"Could not tile {step_label} views: {e}", "warning")
+                tiled_path = None
+            # Add tiled image + individual views to report
+            if tiled_path and os.path.isfile(tiled_path):
+                report.add_image(tiled_path, title=step_label)
+            for view_label, fpath in view_files:
+                report.add_image(fpath, title=f"{step_label} — {view_label}")
+            # product.json gets the tiled image (or front view fallback)
+            if step_add_to_product:
+                product_img = tiled_path if (tiled_path and os.path.isfile(tiled_path)) else view_files[0][1]
+                add_image_to_product(report_items, step_label, filepath=product_img)
 
     # Step 2: coarse fit using fiducials
     coreg.fit_fiducials(verbose=True)
     add_info_to_product(report_items, "Fiducials fit complete", "info")
-    _save_alignment_fig('coreg_02_fiducials', '2. After fiducials fit')
+
+    step_name, step_label, step_add_to_product = 'coreg_02_fiducials', '2. After fiducials fit', False
+    if use_3d:
+        view_files = []
+        try:
+            fig = mne.viz.plot_alignment(info, trans=coreg.trans, **plot_kwargs)
+            # show() sets _first_time=False so render() actually re-renders
+            fig.plotter.show(auto_close=False)
+            for view_label, cam in _alignment_views:
+                try:
+                    fig.plotter.camera_position = cam
+                    fig.plotter.render()
+                    fpath = os.path.join("out_figs", f"{step_name}_{view_label.lower()}.png")
+                    fig.plotter.screenshot(fpath)
+                    view_files.append((view_label, fpath))
+                except Exception as e:
+                    add_info_to_product(report_items,
+                                        f"Could not render {step_label} {view_label}: {e}", "warning")
+            try:
+                fig.plotter.close()
+            except Exception:
+                pass
+        except Exception as e:
+            add_info_to_product(report_items, f"Could not create alignment figure: {e}", "warning")
+            view_files = []
+        if view_files:
+            # Tile all views into a 2x2 grid (for report + optionally product.json)
+            tiled_path = os.path.join("out_figs", f"{step_name}_tiled.png")
+            try:
+                fig_mpl, axes = plt.subplots(2, 2, figsize=(12, 9))
+                fig_mpl.suptitle(step_label, fontsize=13, fontweight="bold")
+                for ax, (view_label, fpath) in zip(axes.flat, view_files):
+                    ax.imshow(plt.imread(fpath))
+                    ax.set_title(view_label, fontsize=10)
+                    ax.axis("off")
+                # blank unused panels if fewer than 4 views succeeded
+                for ax in axes.flat[len(view_files):]:
+                    ax.axis("off")
+                plt.tight_layout()
+                fig_mpl.savefig(tiled_path, dpi=120, bbox_inches="tight")
+                plt.close(fig_mpl)
+            except Exception as e:
+                add_info_to_product(report_items, f"Could not tile {step_label} views: {e}", "warning")
+                tiled_path = None
+            # Add tiled image + individual views to report
+            if tiled_path and os.path.isfile(tiled_path):
+                report.add_image(tiled_path, title=step_label)
+            for view_label, fpath in view_files:
+                report.add_image(fpath, title=f"{step_label} — {view_label}")
+            # product.json gets the tiled image (or front view fallback)
+            if step_add_to_product:
+                product_img = tiled_path if (tiled_path and os.path.isfile(tiled_path)) else view_files[0][1]
+                add_image_to_product(report_items, step_label, filepath=product_img)
 
     # Step 3: ICP refinement — only if head shape points available
     if hsp_count > 0:
@@ -447,7 +438,60 @@ try:
         omit_dist_mm = float(config.get('omit_distance_mm') or 5.0)
 
         coreg.fit_icp(n_iterations=icp_iter_1, nasion_weight=nasion_w1, verbose=True)
-        _save_alignment_fig('coreg_03_icp1', f'3. After ICP ({icp_iter_1} iterations)')  # file only
+
+        # file only (not added to product.json)
+        step_name, step_label, step_add_to_product = 'coreg_03_icp1', f'3. After ICP ({icp_iter_1} iterations)', False
+        if use_3d:
+            view_files = []
+            try:
+                fig = mne.viz.plot_alignment(info, trans=coreg.trans, **plot_kwargs)
+                # show() sets _first_time=False so render() actually re-renders
+                fig.plotter.show(auto_close=False)
+                for view_label, cam in _alignment_views:
+                    try:
+                        fig.plotter.camera_position = cam
+                        fig.plotter.render()
+                        fpath = os.path.join("out_figs", f"{step_name}_{view_label.lower()}.png")
+                        fig.plotter.screenshot(fpath)
+                        view_files.append((view_label, fpath))
+                    except Exception as e:
+                        add_info_to_product(report_items,
+                                            f"Could not render {step_label} {view_label}: {e}", "warning")
+                try:
+                    fig.plotter.close()
+                except Exception:
+                    pass
+            except Exception as e:
+                add_info_to_product(report_items, f"Could not create alignment figure: {e}", "warning")
+                view_files = []
+            if view_files:
+                # Tile all views into a 2x2 grid (for report + optionally product.json)
+                tiled_path = os.path.join("out_figs", f"{step_name}_tiled.png")
+                try:
+                    fig_mpl, axes = plt.subplots(2, 2, figsize=(12, 9))
+                    fig_mpl.suptitle(step_label, fontsize=13, fontweight="bold")
+                    for ax, (view_label, fpath) in zip(axes.flat, view_files):
+                        ax.imshow(plt.imread(fpath))
+                        ax.set_title(view_label, fontsize=10)
+                        ax.axis("off")
+                    # blank unused panels if fewer than 4 views succeeded
+                    for ax in axes.flat[len(view_files):]:
+                        ax.axis("off")
+                    plt.tight_layout()
+                    fig_mpl.savefig(tiled_path, dpi=120, bbox_inches="tight")
+                    plt.close(fig_mpl)
+                except Exception as e:
+                    add_info_to_product(report_items, f"Could not tile {step_label} views: {e}", "warning")
+                    tiled_path = None
+                # Add tiled image + individual views to report
+                if tiled_path and os.path.isfile(tiled_path):
+                    report.add_image(tiled_path, title=step_label)
+                for view_label, fpath in view_files:
+                    report.add_image(fpath, title=f"{step_label} — {view_label}")
+                # product.json gets the tiled image (or front view fallback)
+                if step_add_to_product:
+                    product_img = tiled_path if (tiled_path and os.path.isfile(tiled_path)) else view_files[0][1]
+                    add_image_to_product(report_items, step_label, filepath=product_img)
 
         coreg.omit_head_shape_points(distance=omit_dist_mm / 1000)
         coreg.fit_icp(n_iterations=icp_iter_2, nasion_weight=nasion_w2, verbose=True)
@@ -459,7 +503,58 @@ try:
         )
 
     # Step 4: final result — only this one goes into product.json
-    _save_alignment_fig('coreg_04_final', 'Final alignment', add_to_product=True)
+    step_name, step_label, step_add_to_product = 'coreg_04_final', 'Final alignment', True
+    if use_3d:
+        view_files = []
+        try:
+            fig = mne.viz.plot_alignment(info, trans=coreg.trans, **plot_kwargs)
+            # show() sets _first_time=False so render() actually re-renders
+            fig.plotter.show(auto_close=False)
+            for view_label, cam in _alignment_views:
+                try:
+                    fig.plotter.camera_position = cam
+                    fig.plotter.render()
+                    fpath = os.path.join("out_figs", f"{step_name}_{view_label.lower()}.png")
+                    fig.plotter.screenshot(fpath)
+                    view_files.append((view_label, fpath))
+                except Exception as e:
+                    add_info_to_product(report_items,
+                                        f"Could not render {step_label} {view_label}: {e}", "warning")
+            try:
+                fig.plotter.close()
+            except Exception:
+                pass
+        except Exception as e:
+            add_info_to_product(report_items, f"Could not create alignment figure: {e}", "warning")
+            view_files = []
+        if view_files:
+            # Tile all views into a 2x2 grid (for report + optionally product.json)
+            tiled_path = os.path.join("out_figs", f"{step_name}_tiled.png")
+            try:
+                fig_mpl, axes = plt.subplots(2, 2, figsize=(12, 9))
+                fig_mpl.suptitle(step_label, fontsize=13, fontweight="bold")
+                for ax, (view_label, fpath) in zip(axes.flat, view_files):
+                    ax.imshow(plt.imread(fpath))
+                    ax.set_title(view_label, fontsize=10)
+                    ax.axis("off")
+                # blank unused panels if fewer than 4 views succeeded
+                for ax in axes.flat[len(view_files):]:
+                    ax.axis("off")
+                plt.tight_layout()
+                fig_mpl.savefig(tiled_path, dpi=120, bbox_inches="tight")
+                plt.close(fig_mpl)
+            except Exception as e:
+                add_info_to_product(report_items, f"Could not tile {step_label} views: {e}", "warning")
+                tiled_path = None
+            # Add tiled image + individual views to report
+            if tiled_path and os.path.isfile(tiled_path):
+                report.add_image(tiled_path, title=step_label)
+            for view_label, fpath in view_files:
+                report.add_image(fpath, title=f"{step_label} — {view_label}")
+            # product.json gets the tiled image (or front view fallback)
+            if step_add_to_product:
+                product_img = tiled_path if (tiled_path and os.path.isfile(tiled_path)) else view_files[0][1]
+                add_image_to_product(report_items, step_label, filepath=product_img)
 
 except Exception as e:
     add_info_to_product(report_items, f"FATAL: Coregistration fitting failed: {e}", "error")
