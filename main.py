@@ -90,11 +90,13 @@ setup_matplotlib_backend()
 import matplotlib.pyplot as plt
 
 import mne
+
+mne.set_log_level('WARNING')
 from mne.io.constants import FIFF
 
 # == SETUP ==
 ensure_output_dirs('out_dir', 'out_figs', 'out_dir_report')
-report_items = []
+product_items = []
 report = mne.Report(title='Coregistration Report')  # created early so alignment steps below can add views
 
 # == LOAD CONFIG ==
@@ -112,15 +114,15 @@ try:
         data = mne.io.read_raw_fif(raw_file, preload=False)
     else:
         add_info_to_product(
-            report_items,
+            product_items,
             "FATAL: No sensor data found. Set 'epochs' or 'raw' in config.json.",
             "error"
         )
-        create_product_json(report_items)
+        create_product_json(product_items)
         sys.exit(1)
 except Exception as e:
-    add_info_to_product(report_items, f"FATAL: Could not load sensor data: {e}", "error")
-    create_product_json(report_items)
+    add_info_to_product(product_items, f"FATAL: Could not load sensor data: {e}", "error")
+    create_product_json(product_items)
     sys.exit(1)
 
 info = data.info
@@ -139,15 +141,15 @@ elif eeg_count > 0:
     modality = 'eeg'
 else:
     add_info_to_product(
-        report_items,
+        product_items,
         f"FATAL: No MEG or EEG channels found. Types: {set(ch_types)}",
         "error"
     )
-    create_product_json(report_items)
+    create_product_json(product_items)
     sys.exit(1)
 
 add_info_to_product(
-    report_items,
+    product_items,
     f"Modality: {modality} | EEG: {eeg_count} | MEG: {meg_count}",
     "info"
 )
@@ -182,36 +184,36 @@ if fs_path and os.path.isdir(fs_path):
 
 if not subjects_dir or not subject:
     add_info_to_product(
-        report_items,
+        product_items,
         "FATAL: No FreeSurfer directory found. "
         "Set 'freesurfer' in config.json to the subject's FreeSurfer directory.",
         "error"
     )
-    create_product_json(report_items)
+    create_product_json(product_items)
     sys.exit(1)
 
 if not os.path.isdir(os.path.join(subjects_dir, subject)):
     add_info_to_product(
-        report_items,
+        product_items,
         f"FATAL: FreeSurfer subject directory not found: "
         f"{os.path.join(subjects_dir, subject)}",
         "error"
     )
-    create_product_json(report_items)
+    create_product_json(product_items)
     sys.exit(1)
 
-add_info_to_product(report_items, f"Subject: {subject}", "info")
+add_info_to_product(product_items, f"Subject: {subject}", "info")
 os.environ["SUBJECTS_DIR"] = subjects_dir
 
 # == CHECK DIGITIZATION POINTS ==
 if not info['dig']:
     add_info_to_product(
-        report_items,
+        product_items,
         "FATAL: No digitization points found. "
         "Coregistration requires digitized fiducials (nasion, LPA, RPA).",
         "error"
     )
-    create_product_json(report_items)
+    create_product_json(product_items)
     sys.exit(1)
 
 fid_count = sum(1 for d in info['dig'] if d['kind'] == FIFF.FIFFV_POINT_CARDINAL)
@@ -219,23 +221,23 @@ hsp_count = sum(1 for d in info['dig']
                 if d['kind'] in (FIFF.FIFFV_POINT_HPI, FIFF.FIFFV_POINT_EXTRA))
 
 add_info_to_product(
-    report_items,
+    product_items,
     f"Digitization: {fid_count} fiducials, {hsp_count} head shape points",
     "info"
 )
 
 if fid_count < 3:
     add_info_to_product(
-        report_items,
+        product_items,
         f"FATAL: Only {fid_count} fiducial point(s) found (need 3: nasion, LPA, RPA).",
         "error"
     )
-    create_product_json(report_items)
+    create_product_json(product_items)
     sys.exit(1)
 
 if hsp_count == 0:
     add_info_to_product(
-        report_items,
+        product_items,
         "No head shape points — running fiducials-only fit (less accurate). "
         "For better results, digitize head shape points.",
         "warning"
@@ -250,13 +252,13 @@ try:
     setup_offscreen_3d_backend()
     use_3d = True
 except Exception as e:
-    add_info_to_product(report_items, f"3D alignment plots unavailable: {e}", "warning")
+    add_info_to_product(product_items, f"3D alignment plots unavailable: {e}", "warning")
 
 # app-bem-v2 (watershed) always runs before coreg, so outer_skin + brain are guaranteed.
 # outer_skin = scalp at 40% opacity (see-through); brain = inner_skull solid inside.
 # Valid names — scalp: 'head'/'outer_skin'; skull: 'outer_skull', 'inner_skull'/'brain'
 _plot_surface = {'outer_skin': 0.4, 'brain': 1.0}
-add_info_to_product(report_items, "Plot surfaces: outer_skin (40% opacity) + brain (inner_skull)", "info")
+add_info_to_product(product_items, "Plot surfaces: outer_skin (40% opacity) + brain (inner_skull)", "info")
 
 plot_kwargs = dict(
     subject=subject, subjects_dir=subjects_dir,
@@ -311,10 +313,10 @@ try:
                 break
         else:
             _coreg_surf_name = 'unknown'
-    add_info_to_product(report_items, f"Coreg fitting surface: {_coreg_surf_name}", "info")
+    add_info_to_product(product_items, f"Coreg fitting surface: {_coreg_surf_name}", "info")
 except Exception as e:
-    add_info_to_product(report_items, f"FATAL: Could not initialise coregistration: {e}", "error")
-    create_product_json(report_items)
+    add_info_to_product(product_items, f"FATAL: Could not initialise coregistration: {e}", "error")
+    create_product_json(product_items)
     sys.exit(1)
 
 try:
@@ -334,14 +336,14 @@ try:
                     fig.plotter.screenshot(fpath)
                     view_files.append((view_label, fpath))
                 except Exception as e:
-                    add_info_to_product(report_items,
+                    add_info_to_product(product_items,
                                         f"Could not render {step_label} {view_label}: {e}", "warning")
             try:
                 fig.plotter.close()
             except Exception:
                 pass
         except Exception as e:
-            add_info_to_product(report_items, f"Could not create alignment figure: {e}", "warning")
+            add_info_to_product(product_items, f"Could not create alignment figure: {e}", "warning")
             view_files = []
         if view_files:
             # Tile all views into a 2x2 grid (for report + optionally product.json)
@@ -360,7 +362,7 @@ try:
                 fig_mpl.savefig(tiled_path, dpi=120, bbox_inches="tight")
                 plt.close(fig_mpl)
             except Exception as e:
-                add_info_to_product(report_items, f"Could not tile {step_label} views: {e}", "warning")
+                add_info_to_product(product_items, f"Could not tile {step_label} views: {e}", "warning")
                 tiled_path = None
             # Add tiled image + individual views to report
             if tiled_path and os.path.isfile(tiled_path):
@@ -370,11 +372,11 @@ try:
             # product.json gets the tiled image (or front view fallback)
             if step_add_to_product:
                 product_img = tiled_path if (tiled_path and os.path.isfile(tiled_path)) else view_files[0][1]
-                add_image_to_product(report_items, step_label, filepath=product_img)
+                add_image_to_product(product_items, step_label, filepath=product_img)
 
     # Step 2: coarse fit using fiducials
     coreg.fit_fiducials(verbose=True)
-    add_info_to_product(report_items, "Fiducials fit complete", "info")
+    add_info_to_product(product_items, "Fiducials fit complete", "info")
 
     step_name, step_label, step_add_to_product = 'coreg_02_fiducials', '2. After fiducials fit', False
     if use_3d:
@@ -391,14 +393,14 @@ try:
                     fig.plotter.screenshot(fpath)
                     view_files.append((view_label, fpath))
                 except Exception as e:
-                    add_info_to_product(report_items,
+                    add_info_to_product(product_items,
                                         f"Could not render {step_label} {view_label}: {e}", "warning")
             try:
                 fig.plotter.close()
             except Exception:
                 pass
         except Exception as e:
-            add_info_to_product(report_items, f"Could not create alignment figure: {e}", "warning")
+            add_info_to_product(product_items, f"Could not create alignment figure: {e}", "warning")
             view_files = []
         if view_files:
             # Tile all views into a 2x2 grid (for report + optionally product.json)
@@ -417,7 +419,7 @@ try:
                 fig_mpl.savefig(tiled_path, dpi=120, bbox_inches="tight")
                 plt.close(fig_mpl)
             except Exception as e:
-                add_info_to_product(report_items, f"Could not tile {step_label} views: {e}", "warning")
+                add_info_to_product(product_items, f"Could not tile {step_label} views: {e}", "warning")
                 tiled_path = None
             # Add tiled image + individual views to report
             if tiled_path and os.path.isfile(tiled_path):
@@ -427,14 +429,14 @@ try:
             # product.json gets the tiled image (or front view fallback)
             if step_add_to_product:
                 product_img = tiled_path if (tiled_path and os.path.isfile(tiled_path)) else view_files[0][1]
-                add_image_to_product(report_items, step_label, filepath=product_img)
+                add_image_to_product(product_items, step_label, filepath=product_img)
 
     # Step 3: ICP refinement — only if head shape points available
     if hsp_count > 0:
         icp_iter_1   = int(config.get('icp_iterations_1') or 6)
         icp_iter_2   = int(config.get('icp_iterations_2') or 20)
         nasion_w1    = float(config.get('nasion_weight_1') or 2.0)
-        nasion_w2    = float(config.get('nasion_weight_2') or 10.0)
+        nasion_w2    = float(config.get('nasion_weight_2') or 20.0)
         omit_dist_mm = float(config.get('omit_distance_mm') or 5.0)
 
         coreg.fit_icp(n_iterations=icp_iter_1, nasion_weight=nasion_w1, verbose=True)
@@ -455,14 +457,14 @@ try:
                         fig.plotter.screenshot(fpath)
                         view_files.append((view_label, fpath))
                     except Exception as e:
-                        add_info_to_product(report_items,
+                        add_info_to_product(product_items,
                                             f"Could not render {step_label} {view_label}: {e}", "warning")
                 try:
                     fig.plotter.close()
                 except Exception:
                     pass
             except Exception as e:
-                add_info_to_product(report_items, f"Could not create alignment figure: {e}", "warning")
+                add_info_to_product(product_items, f"Could not create alignment figure: {e}", "warning")
                 view_files = []
             if view_files:
                 # Tile all views into a 2x2 grid (for report + optionally product.json)
@@ -481,7 +483,7 @@ try:
                     fig_mpl.savefig(tiled_path, dpi=120, bbox_inches="tight")
                     plt.close(fig_mpl)
                 except Exception as e:
-                    add_info_to_product(report_items, f"Could not tile {step_label} views: {e}", "warning")
+                    add_info_to_product(product_items, f"Could not tile {step_label} views: {e}", "warning")
                     tiled_path = None
                 # Add tiled image + individual views to report
                 if tiled_path and os.path.isfile(tiled_path):
@@ -491,12 +493,12 @@ try:
                 # product.json gets the tiled image (or front view fallback)
                 if step_add_to_product:
                     product_img = tiled_path if (tiled_path and os.path.isfile(tiled_path)) else view_files[0][1]
-                    add_image_to_product(report_items, step_label, filepath=product_img)
+                    add_image_to_product(product_items, step_label, filepath=product_img)
 
         coreg.omit_head_shape_points(distance=omit_dist_mm / 1000)
         coreg.fit_icp(n_iterations=icp_iter_2, nasion_weight=nasion_w2, verbose=True)
         add_info_to_product(
-            report_items,
+            product_items,
             f"ICP refinement complete ({icp_iter_1} + {icp_iter_2} iterations, "
             f"omit > {omit_dist_mm} mm)",
             "info"
@@ -518,14 +520,14 @@ try:
                     fig.plotter.screenshot(fpath)
                     view_files.append((view_label, fpath))
                 except Exception as e:
-                    add_info_to_product(report_items,
+                    add_info_to_product(product_items,
                                         f"Could not render {step_label} {view_label}: {e}", "warning")
             try:
                 fig.plotter.close()
             except Exception:
                 pass
         except Exception as e:
-            add_info_to_product(report_items, f"Could not create alignment figure: {e}", "warning")
+            add_info_to_product(product_items, f"Could not create alignment figure: {e}", "warning")
             view_files = []
         if view_files:
             # Tile all views into a 2x2 grid (for report + optionally product.json)
@@ -544,7 +546,7 @@ try:
                 fig_mpl.savefig(tiled_path, dpi=120, bbox_inches="tight")
                 plt.close(fig_mpl)
             except Exception as e:
-                add_info_to_product(report_items, f"Could not tile {step_label} views: {e}", "warning")
+                add_info_to_product(product_items, f"Could not tile {step_label} views: {e}", "warning")
                 tiled_path = None
             # Add tiled image + individual views to report
             if tiled_path and os.path.isfile(tiled_path):
@@ -554,11 +556,11 @@ try:
             # product.json gets the tiled image (or front view fallback)
             if step_add_to_product:
                 product_img = tiled_path if (tiled_path and os.path.isfile(tiled_path)) else view_files[0][1]
-                add_image_to_product(report_items, step_label, filepath=product_img)
+                add_image_to_product(product_items, step_label, filepath=product_img)
 
 except Exception as e:
-    add_info_to_product(report_items, f"FATAL: Coregistration fitting failed: {e}", "error")
-    create_product_json(report_items)
+    add_info_to_product(product_items, f"FATAL: Coregistration fitting failed: {e}", "error")
+    create_product_json(product_items)
     sys.exit(1)
 
 # == QUALITY CHECK ==
@@ -571,29 +573,29 @@ try:
 
     quality = "warning" if mean_d > 5.0 else "info"
     add_info_to_product(
-        report_items,
+        product_items,
         f"Fit quality — HSP ↔ MRI surface distances:\n"
         f"  mean: {mean_d:.2f} mm | min: {min_d:.2f} mm | max: {max_d:.2f} mm",
         quality
     )
     if mean_d > 5.0:
         add_info_to_product(
-            report_items,
+            product_items,
             f"Mean distance {mean_d:.1f} mm > 5 mm. "
             "Check digitization quality and inspect the alignment plots.",
             "warning"
         )
 except Exception as e:
-    add_info_to_product(report_items, f"Could not compute fit distances: {e}", "warning")
+    add_info_to_product(product_items, f"Could not compute fit distances: {e}", "warning")
 
 # == SAVE trans.fif ==
 trans_path = os.path.join('out_dir', 'trans.fif')
 try:
     mne.write_trans(trans_path, coreg.trans, overwrite=True)
-    add_info_to_product(report_items, "trans.fif saved successfully", "info")
+    add_info_to_product(product_items, "trans.fif saved successfully", "info")
 except Exception as e:
-    add_info_to_product(report_items, f"FATAL: Could not save trans.fif: {e}", "error")
-    create_product_json(report_items)
+    add_info_to_product(product_items, f"FATAL: Could not save trans.fif: {e}", "error")
+    create_product_json(product_items)
     sys.exit(1)
 
 # == FIGURES (always-available matplotlib plots) ==
@@ -615,9 +617,9 @@ if len(dists) > 0:
         fig_path = os.path.join('out_figs', 'coreg_distances.png')
         plt.savefig(fig_path, dpi=150, bbox_inches='tight')
         plt.close(fig)
-        add_image_to_product(report_items, 'Fit Distances Histogram', filepath=fig_path)
+        add_image_to_product(product_items, 'Fit Distances Histogram', filepath=fig_path)
     except Exception as e:
-        add_info_to_product(report_items, f"Could not plot distances: {e}", "warning")
+        add_info_to_product(product_items, f"Could not plot distances: {e}", "warning")
 
 # Sensor topomap (saved to file for report only)
 try:
@@ -626,7 +628,7 @@ try:
     fig_sensors.savefig(fig_path, dpi=100, bbox_inches='tight')
     plt.close(fig_sensors)
 except Exception as e:
-    add_info_to_product(report_items, f"Could not plot sensors: {e}", "warning")
+    add_info_to_product(product_items, f"Could not plot sensors: {e}", "warning")
 
 # == SAVE REPORT ==
 # Add static matplotlib figures (distances + sensors)
@@ -637,6 +639,6 @@ for fname, title in [('coreg_distances', 'Fit distances histogram'),
         report.add_image(fpath, title=title)
 report.save(os.path.join('out_dir_report', 'report.html'), overwrite=True)
 
-add_info_to_product(report_items, "Coregistration completed successfully", "success")
-create_product_json(report_items)
+add_info_to_product(product_items, "Coregistration completed successfully", "success")
+create_product_json(product_items)
 print("Done.")

@@ -41,7 +41,7 @@ On brainlife.io, these three inputs are written into the app's `config.json` und
 | `icp_iterations_1` | integer | `6` | Number of ICP iterations in the first (coarse) refinement pass. |
 | `icp_iterations_2` | integer | `20` | Number of ICP iterations in the second (fine) refinement pass, run after outlier removal. |
 | `nasion_weight_1` | float | `2.0` | Weight applied to the nasion point during the first ICP pass. |
-| `nasion_weight_2` | float | `10.0` | Weight applied to the nasion point during the second ICP pass. |
+| `nasion_weight_2` | float | `20.0` | Weight applied to the nasion point during the second ICP pass. |
 | `omit_distance_mm` | float | `5.0` | Head-shape points farther than this distance (mm) from the MRI surface are excluded before the second ICP pass. |
 
 ## Usage
