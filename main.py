@@ -327,6 +327,7 @@ except Exception as e:
     create_product_json(product_items)
     sys.exit(1)
 
+_fit_done = False   # set once the ICP/fiducial fit has completed
 try:
     # Step 1: initial state (saved to file only, not product.json)
     step_name, step_label, step_add_to_product = 'coreg_01_initial', '1. Initial (before fit)', False
@@ -384,6 +385,7 @@ try:
 
     # Step 2: coarse fit using fiducials
     coreg.fit_fiducials(verbose=True)
+    _fit_done = True   # fiducials-only fit; ICP below may refine it
     add_info_to_product(product_items, "Fiducials fit complete", "info")
 
     step_name, step_label, step_add_to_product = 'coreg_02_fiducials', '2. After fiducials fit', False
@@ -505,6 +507,7 @@ try:
 
         coreg.omit_head_shape_points(distance=omit_dist_mm / 1000)
         coreg.fit_icp(n_iterations=icp_iter_2, nasion_weight=nasion_w2, verbose=True)
+        _fit_done = True
         add_info_to_product(
             product_items,
             f"ICP refinement complete ({icp_iter_1} + {icp_iter_2} iterations, "
@@ -567,7 +570,19 @@ try:
                 add_image_to_product(product_items, step_label, filepath=product_img)
 
 except Exception as e:
-    add_info_to_product(product_items, f"FATAL: Coregistration fitting failed: {e}", "error")
+    # This try spans three unrelated things: numeric config parsing, the ICP fit
+    # itself, and all the 3D screenshot/report work. Saying "fitting failed" for
+    # all three is wrong - a failed offscreen render (common on this cluster, see
+    # the VTK/Xcursor warnings in slurm-*.err) would blame the coregistration.
+    # Name the stage from where it actually got to.
+    if 'coreg' not in dir() or coreg is None:
+        _stage = "Coregistration setup failed"
+    elif not _fit_done:
+        _stage = "Coregistration fitting failed"
+    else:
+        _stage = ("Coregistration succeeded but the alignment screenshots or report "
+                  "failed, so no trans.fif was written")
+    add_info_to_product(product_items, f"FATAL: {_stage}: {e}", "error")
     print(f"ERROR: {product_items[-1]['msg']}", file=sys.stderr)
     create_product_json(product_items)
     sys.exit(1)
