@@ -118,10 +118,12 @@ try:
             "FATAL: No sensor data found. Set 'epochs' or 'raw' in config.json.",
             "error"
         )
+        print(f"ERROR: {product_items[-1]['msg']}", file=sys.stderr)
         create_product_json(product_items)
         sys.exit(1)
 except Exception as e:
     add_info_to_product(product_items, f"FATAL: Could not load sensor data: {e}", "error")
+    print(f"ERROR: {product_items[-1]['msg']}", file=sys.stderr)
     create_product_json(product_items)
     sys.exit(1)
 
@@ -145,6 +147,7 @@ else:
         f"FATAL: No MEG or EEG channels found. Types: {set(ch_types)}",
         "error"
     )
+    print(f"ERROR: {product_items[-1]['msg']}", file=sys.stderr)
     create_product_json(product_items)
     sys.exit(1)
 
@@ -189,6 +192,7 @@ if not subjects_dir or not subject:
         "Set 'freesurfer' in config.json to the subject's FreeSurfer directory.",
         "error"
     )
+    print(f"ERROR: {product_items[-1]['msg']}", file=sys.stderr)
     create_product_json(product_items)
     sys.exit(1)
 
@@ -199,6 +203,7 @@ if not os.path.isdir(os.path.join(subjects_dir, subject)):
         f"{os.path.join(subjects_dir, subject)}",
         "error"
     )
+    print(f"ERROR: {product_items[-1]['msg']}", file=sys.stderr)
     create_product_json(product_items)
     sys.exit(1)
 
@@ -213,6 +218,7 @@ if not info['dig']:
         "Coregistration requires digitized fiducials (nasion, LPA, RPA).",
         "error"
     )
+    print(f"ERROR: {product_items[-1]['msg']}", file=sys.stderr)
     create_product_json(product_items)
     sys.exit(1)
 
@@ -232,6 +238,7 @@ if fid_count < 3:
         f"FATAL: Only {fid_count} fiducial point(s) found (need 3: nasion, LPA, RPA).",
         "error"
     )
+    print(f"ERROR: {product_items[-1]['msg']}", file=sys.stderr)
     create_product_json(product_items)
     sys.exit(1)
 
@@ -316,6 +323,7 @@ try:
     add_info_to_product(product_items, f"Coreg fitting surface: {_coreg_surf_name}", "info")
 except Exception as e:
     add_info_to_product(product_items, f"FATAL: Could not initialise coregistration: {e}", "error")
+    print(f"ERROR: {product_items[-1]['msg']}", file=sys.stderr)
     create_product_json(product_items)
     sys.exit(1)
 
@@ -560,6 +568,7 @@ try:
 
 except Exception as e:
     add_info_to_product(product_items, f"FATAL: Coregistration fitting failed: {e}", "error")
+    print(f"ERROR: {product_items[-1]['msg']}", file=sys.stderr)
     create_product_json(product_items)
     sys.exit(1)
 
@@ -595,6 +604,7 @@ try:
     add_info_to_product(product_items, "trans.fif saved successfully", "info")
 except Exception as e:
     add_info_to_product(product_items, f"FATAL: Could not save trans.fif: {e}", "error")
+    print(f"ERROR: {product_items[-1]['msg']}", file=sys.stderr)
     create_product_json(product_items)
     sys.exit(1)
 
