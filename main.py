@@ -384,7 +384,7 @@ try:
                 add_image_to_product(product_items, step_label, filepath=product_img)
 
     # Step 2: coarse fit using fiducials
-    coreg.fit_fiducials(verbose=True)
+    coreg.fit_fiducials()
     _fit_done = True   # fiducials-only fit; ICP below may refine it
     add_info_to_product(product_items, "Fiducials fit complete", "info")
 
@@ -449,7 +449,7 @@ try:
         nasion_w2    = float(config.get('nasion_weight_2') or 20.0)
         omit_dist_mm = float(config.get('omit_distance_mm') or 5.0)
 
-        coreg.fit_icp(n_iterations=icp_iter_1, nasion_weight=nasion_w1, verbose=True)
+        coreg.fit_icp(n_iterations=icp_iter_1, nasion_weight=nasion_w1)
 
         # file only (not added to product.json)
         step_name, step_label, step_add_to_product = 'coreg_03_icp1', f'3. After ICP ({icp_iter_1} iterations)', False
@@ -506,7 +506,7 @@ try:
                     add_image_to_product(product_items, step_label, filepath=product_img)
 
         coreg.omit_head_shape_points(distance=omit_dist_mm / 1000)
-        coreg.fit_icp(n_iterations=icp_iter_2, nasion_weight=nasion_w2, verbose=True)
+        coreg.fit_icp(n_iterations=icp_iter_2, nasion_weight=nasion_w2)
         _fit_done = True
         add_info_to_product(
             product_items,
@@ -616,6 +616,10 @@ except Exception as e:
 trans_path = os.path.join('out_dir', 'trans.fif')
 try:
     mne.write_trans(trans_path, coreg.trans, overwrite=True)
+    # Spec requires the written file to load with its MNE reader before
+    # success is reported, so a truncated or corrupt write fails here
+    # rather than three apps downstream.
+    mne.read_trans(trans_path)
     add_info_to_product(product_items, "trans.fif saved successfully", "info")
 except Exception as e:
     add_info_to_product(product_items, f"FATAL: Could not save trans.fif: {e}", "error")
@@ -662,7 +666,13 @@ for fname, title in [('coreg_distances', 'Fit distances histogram'),
     fpath = os.path.join('out_figs', fname + '.png')
     if os.path.isfile(fpath):
         report.add_image(fpath, title=title)
-report.save(os.path.join('out_dir_report', 'report.html'), overwrite=True)
+# A failed report must not cost us product.json: the real output is
+# already on disk by this point, and an unguarded failure here would
+# exit with a bare traceback and no diagnostics at all.
+try:
+    report.save(os.path.join('out_dir_report', 'report.html'), overwrite=True)
+except Exception as e:
+    add_info_to_product(product_items, f"Could not save HTML report: {e}", "warning")
 
 add_info_to_product(product_items, "Coregistration completed successfully", "success")
 create_product_json(product_items)
