@@ -95,7 +95,7 @@ mne.set_log_level('WARNING')
 from mne.io.constants import FIFF
 
 # == SETUP ==
-ensure_output_dirs('out_dir', 'out_figs', 'out_dir_report')
+ensure_output_dirs('out_dir', 'out_figs', 'out_report')
 product_items = []
 report = mne.Report(title='Coregistration Report')  # created early so alignment steps below can add views
 
@@ -670,7 +670,7 @@ for fname, title in [('coreg_distances', 'Fit distances histogram'),
 # already on disk by this point, and an unguarded failure here would
 # exit with a bare traceback and no diagnostics at all.
 try:
-    report.save(os.path.join('out_dir_report', 'report.html'), overwrite=True)
+    report.save(os.path.join('out_report', 'report.html'), overwrite=True)
 except Exception as e:
     add_info_to_product(product_items, f"Could not save HTML report: {e}", "warning")
 

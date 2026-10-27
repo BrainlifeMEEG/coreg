@@ -1,6 +1,6 @@
 out_dir/
 out_figs/
-out_dir_report/
+out_report/
 product.json
 *.pyc
 __pycache__/

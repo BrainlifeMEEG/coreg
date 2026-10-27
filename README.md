@@ -29,7 +29,7 @@ On brainlife.io, these three inputs are written into the app's `config.json` und
 ## Outputs
 
 - `out_dir/trans.fif` (`neuro/meeg/mne/trans`): MRI-to-head coordinate transform (consumed by downstream forward-model apps)
-- `out_dir_report/report.html` (`report/html`): coregistration quality report (alignment views per fitting step, fit-distance histogram, sensor topomap)
+- `out_report/report.html` (`report/html`): coregistration quality report (alignment views per fitting step, fit-distance histogram, sensor topomap)
 
 ## Configuration Parameters
 
