@@ -1,0 +1,16 @@
+{
+    "freesurfer": "",
+    "output": "",
+    "subjects_dir": null,
+    "subject": null,
+    "mne": "",
+    "raw": "",
+    "epo": "",
+    "epochs": "",
+    "fiducials": "auto",
+    "icp_iterations_1": 6,
+    "icp_iterations_2": 20,
+    "nasion_weight_1": 2.0,
+    "nasion_weight_2": 20.0,
+    "omit_distance_mm": 5.0
+}
