@@ -1,5 +1,55 @@
 # Automated MEG/EEG Coregistration
 
+<!-- brainlife-app:begin (generated from the App manifest; edit the manifest, not this block) -->
+
+> **Coregistration aligns the digitized head shape and fiducials (nasion, LPA, RPA) to the FreeSurfer MRI surface. The output transform (trans.fif) is required to compute the forward model.**
+
+Uses mne.coreg.Coregistration: a coarse fiducial fit followed by two ICP passes on head-shape points, dropping points farther than omit_distance_mm. Produces trans.fif and a quality report with alignment views and a fit-distance histogram. Needs a FreeSurfer subject and raw or epoched data with digitisation points; run it before computing a forward model.
+
+| | |
+|---|---|
+| 📥 **Inputs** | `neuro/freesurfer` · `neuro/meeg/mne/epochs` (optional) · `neuro/meeg/mne/raw` (optional) |
+| 📤 **Outputs** | `neuro/meeg/mne/trans` · `report/html` |
+| 🐳 **Container** | `brainlifemeeg/mne-freesurfer:1.12.1-7.4.1` |
+| ⚙️ **Resources** | 1 CPUs · 20 GB memory · 4 h walltime |
+| 🔑 **Requires** | `FREESURFER_LICENSE`, `FS_LICENSE` |
+| 🔗 **Run it** | [doi.org/10.25663/brainlife.app.957](https://doi.org/10.25663/brainlife.app.957) |
+
+#### 📥 Inputs
+
+| Input | Datatype | Required | Description |
+|---|---|---|---|
+| `freesurfer` | `neuro/freesurfer` | yes | FreeSurfer subject directory (recon-all output). |
+| `epochs` | `neuro/meeg/mne/epochs` | no | Epoched data with digitisation points (required if raw is not given). |
+| `raw` | `neuro/meeg/mne/raw` | no | Raw data with digitisation points (required if epochs is not given). |
+
+#### 📤 Outputs
+
+| Output | Datatype | Description |
+|---|---|---|
+| `out_dir` | `neuro/meeg/mne/trans` | MRI-to-head transform (trans.fif). |
+| `out_report` | `report/html` | Coregistration quality report. |
+
+<details>
+<summary><b>⚙️ Parameters</b> (6)</summary>
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `fiducials` | string | `auto` | auto, estimated, or JSON dict |
+| `icp_iterations_1` | number | `6` | First ICP pass iterations |
+| `icp_iterations_2` | number | `20` | Second ICP pass iterations |
+| `nasion_weight_1` | number | `2` | Nasion weight (coarse pass) |
+| `nasion_weight_2` | number | `20` | Nasion weight (fine pass) |
+| `omit_distance_mm` | number | `5` | Outlier threshold (mm) |
+
+</details>
+
+📚 **References used by this App:**
+- Hayashi S, et al. brainlife.io: a decentralized and open-source cloud platform to support neuroscience research. Nat Methods 21:809-813 (2024). [doi:10.1038/s41592-024-02237-2](https://doi.org/10.1038/s41592-024-02237-2)
+- Gramfort A, et al. MEG and EEG data analysis with MNE-Python. Front Neurosci 7:267 (2013). [doi:10.3389/fnins.2013.00267](https://doi.org/10.3389/fnins.2013.00267)
+
+<!-- brainlife-app:end -->
+
 [![Run on Brainlife.io](https://img.shields.io/badge/Brainlife-bl.app.957-blue.svg)](https://doi.org/10.25663/brainlife.app.957)
 
 ## Description
